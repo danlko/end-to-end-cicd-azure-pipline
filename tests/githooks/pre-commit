@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "pre-commit checks.."
+
+if ! python3 -m compileall -q .; then
+    echo "Syntax Error"
+    echo "Commit Rejected"
+    exit 1
+fi
+
+echo "OK. Committing."

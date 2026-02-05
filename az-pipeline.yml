@@ -1,0 +1,78 @@
+trigger:
+- main
+
+pool:
+  name: Default
+
+variables:
+- name: imageName
+  value: devops-app
+- name: fullImage
+  value: $(ACR_LOGIN_SERVER)/$(imageName):$(Build.BuildId)
+- name: deployDir
+  value: /opt/pyservice
+
+steps:
+- script: |
+    set -euo pipefail
+    echo "$(ACR_PASSWORD)" | docker login "$(ACR_LOGIN_SERVER)" -u "$(ACR_USERNAME)" --password-stdin
+    docker build -t "$(fullImage)" .
+    docker push "$(fullImage)"
+  displayName: "Build & Push image"
+
+- task: DownloadSecureFile@1
+  name: sshKey
+  inputs:
+    secureFile: "id_rsa"
+
+- script: |
+    set -euo pipefail
+    chmod 600 "$(sshKey.secureFilePath)"
+    mkdir -p ~/.ssh
+    ssh-keyscan -H "$(VM_PUBLIC_IP)" >> ~/.ssh/known_hosts
+
+    scp -i "$(sshKey.secureFilePath)" docker-compose.prod.yml "$(VM_ADMIN_USER)@$(VM_PUBLIC_IP):/tmp/docker-compose.prod.yml"
+
+    cat > /tmp/prod.env <<EOF
+    DB_NAME=$(DB_NAME)
+    DB_USER=$(DB_USER)
+    DB_PASSWORD=$(DB_PASSWORD)
+    APP_IMAGE=$(fullImage)
+    EOF
+    scp -i "$(sshKey.secureFilePath)" /tmp/prod.env "$(VM_ADMIN_USER)@$(VM_PUBLIC_IP):/tmp/.env"
+
+    ssh -i "$(sshKey.secureFilePath)" "$(VM_ADMIN_USER)@$(VM_PUBLIC_IP)" "
+      set -euo pipefail
+
+      sudo mkdir -p $(deployDir)
+      sudo mv /tmp/docker-compose.prod.yml $(deployDir)/docker-compose.prod.yml
+      sudo mv /tmp/.env $(deployDir)/.env
+      sudo chown -R \$USER:\$USER $(deployDir)
+
+      cd $(deployDir)
+
+      if ! docker compose version >/dev/null 2>&1; then
+        sudo apt-get update -y
+        sudo apt-get install -y curl
+        sudo mkdir -p /usr/local/lib/docker/cli-plugins
+        sudo curl -SL https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64 \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose
+        sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+      fi
+
+      echo '$(ACR_PASSWORD)' | sudo docker login '$(ACR_LOGIN_SERVER)' -u '$(ACR_USERNAME)' --password-stdin
+      sudo docker compose -f docker-compose.prod.yml up -d --pull always
+
+      for i in \$(seq 1 30); do
+        if curl -fsS http://localhost:5000/ >/dev/null; then
+          echo OK
+          exit 0
+        fi
+        sleep 2
+      done
+
+      echo 'Health failed, logs:'
+      sudo docker compose -f docker-compose.prod.yml logs --tail=200 app || true
+      exit 1
+    "
+  displayName: "Deploy to VM"
