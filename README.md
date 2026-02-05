@@ -6,14 +6,14 @@ The container image of the app is built and pushed to Azure Container Registry (
 ## Tech
 
 ### Project Structure 
-├── app/                      # Flask application 
-├── terraform/                # Infrastructure as Code 
-├── tests/                    # pre-commit test and health-check
-├── Dockerfile                # App containerization
-├── docker-compose.yaml       # Infrastructure 
-├── docker-compose.prod.yaml  # Infrastructure for prod
-├── az-pipeline.yml           # CI/CD pipeline definition
-└── README.md
+- app/                      # Flask application 
+- terraform/                # Infrastructure as Code 
+- tests/                    # pre-commit test and health-check
+- Dockerfile                # App containerization
+- docker-compose.yaml       # Infrastructure 
+- docker-compose.prod.yaml  # Infrastructure for prod
+- az-pipeline.yml           # CI/CD pipeline definition
+- README.md
 
 ### Azure prereqs:
 
